@@ -17,6 +17,7 @@ COMPONENTS = {
     "openarmx_ros2": "openflex_armx/openarmx_ros2",
     "openarmx_teleop_vr": "openflex_armx/openarmx_teleop_vr",
     "openarmx_tools": "openflex_armx/openarmx_tools",
+    "openarmx_hands": "openflex_armx/openarmx_hands",
     "base_model_interface_layer": "openflex_chassis/base_model_interface_layer",
     "hardware_sensor_layer": "openflex_chassis/hardware_sensor_layer",
     "mapping_localization_layer": "openflex_chassis/mapping_localization_layer",
@@ -47,6 +48,31 @@ class ComponentManifestTest(unittest.TestCase):
         installer = WORKSPACE / "src" / "OpenFleX" / "install_openflex_drivers_and_build.sh"
         text = installer.read_text(encoding="utf-8")
         self.assertIn("ros-humble-ros2controlcli", text)
+
+    def test_environment_installs_python_yaml_for_dexterous_hands(self):
+        installer = WORKSPACE / "src" / "OpenFleX" / "install_openflex_drivers_and_build.sh"
+        text = installer.read_text(encoding="utf-8")
+        self.assertIn("python3-yaml", text)
+
+    def test_installer_registers_dexterous_hand_and_ik_packages(self):
+        installer = WORKSPACE / "src" / "OpenFleX" / "install_openflex_drivers_and_build.sh"
+        text = installer.read_text(encoding="utf-8")
+        expected_packages = {
+            "openarmx_hands",
+            "hands_bringup",
+            "hands_description",
+            "hands_hardware",
+            "openarmx_hand_bringup",
+            "openarmx_hand_description",
+            "openarmx_hand_gui",
+            "openarmx_hand_hardware",
+            "openarmx_hands_bridge",
+            "openarmx_hands_hig",
+            "openarmx_ik_control_panel",
+        }
+        for package in expected_packages:
+            with self.subTest(package=package):
+                self.assertIn(package, text)
 
     def test_all_managed_repositories_have_metadata(self):
         for name, relative_path in COMPONENTS.items():

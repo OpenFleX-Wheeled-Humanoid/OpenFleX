@@ -329,6 +329,7 @@ openarmx_description|openflex_ws/src/openflex_armx/openarmx_description
 openarmx_ros2|openflex_ws/src/openflex_armx/openarmx_ros2
 openarmx_teleop_vr|openflex_ws/src/openflex_armx/openarmx_teleop_vr
 openarmx_tools|openflex_ws/src/openflex_armx/openarmx_tools
+openarmx_hands|openflex_ws/src/openflex_armx/openarmx_hands
 base_model_interface_layer|openflex_ws/src/openflex_chassis/base_model_interface_layer
 hardware_sensor_layer|openflex_ws/src/openflex_chassis/hardware_sensor_layer
 mapping_localization_layer|openflex_ws/src/openflex_chassis/mapping_localization_layer
@@ -1214,6 +1215,7 @@ install_system_build_dependencies() {
     git
     python3-vcstool
     python3-pip
+    python3-yaml
     python3-tk
     python3-websockets
   )
@@ -1809,12 +1811,24 @@ build_openflex_workspace() {
     openarmx_gravity_comp \
     openarmx_bimanual_moveit_config
 
+  build_packages "openarmx dexterous hand runtime group" \
+    hands_description \
+    hands_hardware \
+    hands_bringup \
+    openarmx_hand_hardware \
+    openarmx_hand_description \
+    openarmx_hand_bringup \
+    openarmx_hands_hig \
+    openarmx_hands_bridge \
+    openarmx_hand_gui
+
   build_packages "openarmx tool panels group" \
     openarmx_joint_slider_panel \
     openarmx_gripper_panel \
     openarmx_kp_kd_panel \
     openarmx_battery_monitor \
-    openarmx_preview_bringup
+    openarmx_preview_bringup \
+    openarmx_ik_control_panel
 
   build_packages "head runtime group" \
     openarmx_head_bringup \
