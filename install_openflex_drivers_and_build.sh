@@ -403,6 +403,51 @@ sync_component() {
   echo "  path:   ${target_path}"
   echo "  branch: ${OPENFLEX_GIT_BRANCH}"
 
+  # VLA is an optional, separately managed component. Its repository does not
+  # provide the openflex_component.yaml metadata used by the other components.
+  # Treat the directory itself as the installation marker: keep any existing
+  # copy untouched, and download the branch archive directly only when absent.
+  if [[ "${repo_name}" == "openflex_vla" ]]; then
+    if [[ -d "${target_path}" ]]; then
+      echo "  local VLA directory exists; skipping remote metadata and update checks."
+      return 0
+    fi
+
+    echo "  local VLA directory is missing; downloading the branch archive directly."
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+      echo "+ curl -fL --retry 2 --connect-timeout 10 -o <temporary>/openflex_vla.zip ${archive_url}"
+      echo "+ unzip -q <temporary>/openflex_vla.zip -d <temporary>"
+      echo "+ install extracted VLA directory at ${target_path}"
+      return 0
+    fi
+
+    temp_dir="$(mktemp -d)"
+    archive_file="${temp_dir}/${repo_name}.zip"
+    if ! curl -fL --retry 2 --connect-timeout 10 -o "${archive_file}" "${archive_url}"; then
+      echo "ERROR: failed to download ${repo_name} from ${archive_url}" >&2
+      return 1
+    fi
+    if ! unzip -q "${archive_file}" -d "${temp_dir}"; then
+      echo "ERROR: downloaded archive is invalid: ${repo_name}" >&2
+      return 1
+    fi
+    extracted_dir="$(find "${temp_dir}" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print -quit)"
+    if [[ -z "${extracted_dir}" ]]; then
+      echo "ERROR: downloaded archive has no top-level directory: ${repo_name}" >&2
+      return 1
+    fi
+
+    mkdir -p "$(dirname "${target_path}")"
+    if [[ -e "${target_path}" ]]; then
+      backup_path="${target_path}.backup.$(date +%Y%m%d-%H%M%S)"
+      mv "${target_path}" "${backup_path}"
+      echo "  backed up previous VLA path to ${backup_path}"
+    fi
+    mv "${extracted_dir}" "${target_path}"
+    echo "  installed ${repo_name} from branch ${OPENFLEX_GIT_BRANCH}."
+    return 0
+  fi
+
   if [[ -f "${local_manifest}" ]]; then
     local_revision="$(manifest_value "${local_manifest}" revision || true)"
     [[ -n "${local_revision}" ]] || local_revision="0"
@@ -410,9 +455,6 @@ sync_component() {
     [[ -n "${update_policy}" ]] || update_policy="check_and_update"
   fi
 
-  # Some components, such as VLA, are intentionally installed once and then
-  # managed outside this installer. A complete local copy must not trigger a
-  # remote metadata request or an update prompt for that policy.
   if [[ "${update_policy}" == "download_if_missing" ]] && component_is_complete "${target_path}" "${repo_name}" "${OPENFLEX_GIT_BRANCH}"; then
     echo "  local component exists; update policy is download_if_missing, skipping."
     return 0
