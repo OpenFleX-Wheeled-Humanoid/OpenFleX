@@ -272,13 +272,32 @@ component_is_complete() {
 
 confirm_sync_action() {
   local prompt="$1"
-  if [[ "${DRY_RUN}" -eq 1 || ! -t 0 ]]; then
-    echo "  ${prompt} [dry-run/non-interactive: no]"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    echo "  ${prompt} [dry-run: no]"
     return 1
   fi
   local answer
-  read -r -p "  ${prompt} [y/N]: " answer
-  [[ "${answer,,}" == "y" || "${answer,,}" == "yes" ]]
+  while true; do
+    if [[ -r /dev/tty ]]; then
+      read -r -p "  ${prompt} [yes/no]: " answer </dev/tty || return 1
+    elif [[ -t 0 ]]; then
+      read -r -p "  ${prompt} [yes/no]: " answer || return 1
+    else
+      echo "  ${prompt} [non-interactive: no]"
+      return 1
+    fi
+    case "${answer,,}" in
+      yes)
+        return 0
+        ;;
+      no|"")
+        return 1
+        ;;
+      *)
+        echo "  请输入 yes 或 no。" >&2
+        ;;
+    esac
+  done
 }
 
 require_file() {
@@ -448,6 +467,45 @@ sync_component() {
     return 0
   fi
 
+  # A component with no local directory is part of the initial installation.
+  # Download it directly; metadata and update confirmation are only needed for
+  # an existing component that may have a newer remote revision.
+  if ! component_is_complete "${target_path}" "${repo_name}" "${OPENFLEX_GIT_BRANCH}"; then
+    echo "  local component is missing or incomplete; downloading directly."
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+      echo "+ curl -fL --retry 2 --connect-timeout 10 -o <temporary>/${repo_name}.zip ${archive_url}"
+      echo "+ unzip -q <temporary>/${repo_name}.zip -d <temporary>"
+      echo "+ install extracted component at ${target_path}"
+      return 0
+    fi
+
+    temp_dir="$(mktemp -d)"
+    archive_file="${temp_dir}/${repo_name}.zip"
+    if ! curl -fL --retry 2 --connect-timeout 10 -o "${archive_file}" "${archive_url}"; then
+      echo "ERROR: failed to download ${repo_name} from ${archive_url}" >&2
+      return 1
+    fi
+    if ! unzip -q "${archive_file}" -d "${temp_dir}"; then
+      echo "ERROR: downloaded archive is invalid: ${repo_name}" >&2
+      return 1
+    fi
+    extracted_dir="$(find "${temp_dir}" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print -quit)"
+    if [[ -z "${extracted_dir}" ]] || ! component_is_complete "${extracted_dir}" "${repo_name}" "${OPENFLEX_GIT_BRANCH}"; then
+      echo "ERROR: downloaded component failed completeness check: ${repo_name}" >&2
+      return 1
+    fi
+
+    mkdir -p "$(dirname "${target_path}")"
+    if [[ -e "${target_path}" ]]; then
+      backup_path="${target_path}.backup.$(date +%Y%m%d-%H%M%S)"
+      mv "${target_path}" "${backup_path}"
+      echo "  backed up previous incomplete component to ${backup_path}"
+    fi
+    mv "${extracted_dir}" "${target_path}"
+    echo "  installed ${repo_name} from branch ${OPENFLEX_GIT_BRANCH}."
+    return 0
+  fi
+
   if [[ -f "${local_manifest}" ]]; then
     local_revision="$(manifest_value "${local_manifest}" revision || true)"
     [[ -n "${local_revision}" ]] || local_revision="0"
@@ -489,11 +547,7 @@ sync_component() {
   fi
 
   if ! component_is_complete "${target_path}" "${repo_name}" "${OPENFLEX_GIT_BRANCH}"; then
-    echo "  local component is missing or incomplete."
-    if ! confirm_sync_action "Download ${repo_name} revision ${remote_revision}?"; then
-      echo "  skipped."
-      return 0
-    fi
+    echo "  local component is incomplete; downloading the current branch."
   elif revision_is_newer "${local_revision}" "${remote_revision}"; then
     echo "  update available: local ${local_revision}, remote ${remote_revision}"
     if ! confirm_sync_action "Update ${repo_name} to revision ${remote_revision}?"; then
